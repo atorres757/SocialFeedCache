@@ -1,7 +1,6 @@
-var http = require('http'), url = require('url'), youtube = require('youtube-feeds'), facebook = require('fbgraph'), twitter = require('twitter-api').createClient(), mongo = require('mongodb'), mongoClient = mongo.MongoClient;
-
-// TODO: create feeds collection if not exists
-// TODO: create errors collection if not exists
+var http = require('http'), url = require('url'), 
+	youtube = require('youtube-feeds'), facebook = require('fbgraph'), twitter = require('twitter-api').createClient(), 
+	mongo = require('mongodb'), mongoClient = mongo.MongoClient;
 
 twitter.setAuth ( 
 	    'your consumer key',
@@ -75,8 +74,6 @@ var proxy = http.createServer(function (req, res){
 			res.end('invalid source id, must not contain special characters other than - or _');
 		}
 		
-		logError({message:"oh no"});
-		
 		mongoClient.connect("mongodb://localhost:27017/socialfeeds", function (err, db){
 			if (err instanceof Error) {
 				logError(err);
@@ -103,14 +100,14 @@ var proxy = http.createServer(function (req, res){
 								}
 							});
 						}else{
-							if ((timestamp - record.lastmod) > (60 * 60 * 2)) {
-								console.log('refresh cache');
+							if ((timestamp - record.lastmod) > (60 * 60 * 10)) {
 								getSocialFeed(key, source, sourceId, function (data) {
 									if (data != null && typeof data.error == "undefined") {
 										db.collection('feeds').update({key:key, source:source}, {feed:data, lastmod: timestamp}, function (err, records) {
 											if (err instanceof Error) {
 												logError(err);
 											}
+											console.log('refreshed cache');
 											db.close();
 											res.end(JSON.stringify(data));
 										});
