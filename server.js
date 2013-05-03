@@ -1,6 +1,7 @@
 var http = require('http'), url = require('url'), 
 	youtube = require('youtube-feeds'), facebook = require('fbgraph'), twitter = require('twitter-api').createClient(), 
-	mongo = require('mongodb'), mongoClient = mongo.MongoClient;
+	mongo = require('mongodb'), mongoClient = mongo.MongoClient, mongoConnStr = "mongodb://localhost:27017/socialfeeds",
+	expiration = 10; // 10 min expiration
 
 twitter.setAuth ( 
 	    'your consumer key',
@@ -9,12 +10,12 @@ twitter.setAuth (
 	    'some access secret' 
 	);
 
-var proxy = http.createServer(function (req, res){
+http.createServer(function (req, res){
 	var query = url.parse(req.url, true).query, ret = "", now = new Date(), timestamp = now.getTime(),
 	key = query.key || null, source = query.source || null, sourceId = query.sourceId || null;
 	
 	function logError (feederror) {
-		mongoClient.connect("mongodb://localhost:27017/socialfeeds", function (err, db){
+		mongoClient.connect(mongoConnStr, function (err, db){
 			db.collection('errors').insert({key:key, source:source, error: feederror, createdate: now}, function (err, records) {
 				if (err instanceof Error) {
 					console.log(err);
@@ -24,7 +25,7 @@ var proxy = http.createServer(function (req, res){
 		});
 	}
 	
-	function getSocialFeed (key, source, sourceId, cb) {
+	function getSocialFeed (source, sourceId, cb) {
 		switch (source) {
 			case 'facebook':
 				facebook.get(sourceId, function (err, data){
@@ -63,18 +64,18 @@ var proxy = http.createServer(function (req, res){
 		
 		// validate data
 		if (key.match(/[^a-zA-Z0-9_-]/)) {
-			res.end('invalid key, must not contain special characters other than - or _');
+			res.end('error: invalid key, must not contain special characters other than - or _');
 		}
 		
 		if (source.match(/[^a-zA-Z]/)) {
-			res.end('invalid source supported: [facebook, twitter, youtube]');
+			res.end('error: invalid source supported: [facebook, twitter, youtube]');
 		}
 		
 		if (sourceId.match(/[^a-zA-Z0-9_-]/)) {
-			res.end('invalid source id, must not contain special characters other than - or _');
+			res.end('error: invalid source id, must not contain special characters other than - or _');
 		}
 		
-		mongoClient.connect("mongodb://localhost:27017/socialfeeds", function (err, db){
+		mongoClient.connect(mongoConnStr, function (err, db){
 			if (err instanceof Error) {
 				logError(err);
 				res.end();
@@ -86,7 +87,7 @@ var proxy = http.createServer(function (req, res){
 						res.end();
 					}else{
 						if (record == null) {
-							getSocialFeed(key, source, sourceId, function (data) {
+							getSocialFeed(source, sourceId, function (data) {
 								if (data != null && typeof data.error == "undefined") {
 									db.collection('feeds').insert({key:key, source:source, feed:data, lastmod: timestamp}, function (err, records) {
 										if (err instanceof Error) {
@@ -100,14 +101,13 @@ var proxy = http.createServer(function (req, res){
 								}
 							});
 						}else{
-							if ((timestamp - record.lastmod) > (60 * 60 * 10)) {
-								getSocialFeed(key, source, sourceId, function (data) {
+							if ((timestamp - record.lastmod) > (60000 * expiration)) {
+								getSocialFeed(source, sourceId, function (data) {
 									if (data != null && typeof data.error == "undefined") {
-										db.collection('feeds').update({key:key, source:source}, {feed:data, lastmod: timestamp}, function (err, records) {
+										db.collection('feeds').update({key:key, source:source}, {'$set':{feed:data, lastmod: timestamp}}, function (err, records) {
 											if (err instanceof Error) {
 												logError(err);
 											}
-											console.log('refreshed cache');
 											db.close();
 											res.end(JSON.stringify(data));
 										});
@@ -125,6 +125,6 @@ var proxy = http.createServer(function (req, res){
 			}
 		});
 	}else{
-		res.end("invalid parameters");
+		res.end("error: invalid parameters");
 	}
 }).listen(3000, '192.168.43.128');
