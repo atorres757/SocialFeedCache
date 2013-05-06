@@ -152,3 +152,12 @@ exports.twitter = function (req, res) {
 exports.youtube = function (req, res) {
 	findSocialFeedCache(req, res, "youtube");
 };
+
+exports.errors = function (req, res) {
+	mongoClient.connect(mongoConnStr, function (err, db){
+		db.collection('errors').find().toArray(function (err, records) {
+			res.end(JSON.stringify(records));
+			db.close();
+		});
+	});
+}

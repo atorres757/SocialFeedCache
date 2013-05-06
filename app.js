@@ -26,6 +26,7 @@ if ('development' == app.get('env')) {
 app.get('/facebook', routes.facebook);
 app.get('/youtube', routes.youtube);
 app.get('/twitter', routes.twitter);
+app.get('/errors', routes.errors);
 
 http.createServer(app).listen(app.get('port'), function(){
   console.log('Express server listening on port ' + app.get('port'));
