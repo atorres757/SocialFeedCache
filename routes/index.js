@@ -3,10 +3,10 @@
  * Social Feed Cache
  */
 
-var http = require('http'), url = require('url'), 
+var http = require('http'), url = require('url'), getopts = require('getopts'),
 	youtube = require('youtube-feeds'), facebook = require('fbgraph'), twitter = require('twitter-api').createClient(), 
-	mongo = require('mongodb'), mongoClient = mongo.MongoClient, mongoConnStr = "mongodb://localhost:27017/socialfeeds",
-	expiration = 10; // 10 min expiration
+	fbconfig = {id:"facebook-id", secret:"facebook-secret"},
+	mongo = require('mongodb'), mongoClient = mongo.MongoClient, mongoConnStr = "mongodb://localhost:27017/socialfeeds";
 
 twitter.setAuth ( 
 	    'your consumer key',
@@ -14,7 +14,7 @@ twitter.setAuth (
 	    'some access key',
 	    'some access secret' 
 	);
-
+	
 /**
  * 
  * @param source [twitter, facebook, youtube]
@@ -23,7 +23,8 @@ twitter.setAuth (
  */
 function findSocialFeedCache (req, res, source) {
 	var query = url.parse(req.url, true).query, ret = "", now = new Date(), timestamp = now.getTime(),
-	key = query.key || null, source = source || null, sourceId = query.sourceId || null;
+	key = query.key || null, source = source || null, sourceId = query.sourceId || null,
+	now = new Date(), timestamp = now.getTime(), default_expiration = (timestamp + (60000 * 10)), expiration = parseInt(query.expiration) || null;
 	
 	function logError (feederror) {
 		mongoClient.connect(mongoConnStr, function (err, db){
@@ -39,12 +40,24 @@ function findSocialFeedCache (req, res, source) {
 	function getSocialFeed (source, sourceId, cb) {
 		switch (source) {
 			case 'facebook':
-				facebook.get(sourceId, function (err, data){
-					if (err instanceof Error) {
-						logError(err);
-						data = null;
-					}
-					cb(data);
+				facebook.authorize({
+				      "client_id":      fbconfig.id
+				      , "client_secret":  fbconfig.secret
+				      , "grant_type":     "client_credentials"
+				    }, 
+				    function (authErr, authRes){
+					    if (!authErr) {
+					    	facebook.get(sourceId + "/feed", function (err, data){
+					    		if (err) {
+					    			logError(err);
+					    			data = null;
+					    		}
+					    		cb(data);
+							});
+					    }else{
+					    	logError(authError);
+					    	cb(null);
+					    }
 				});
 				break;
 			case 'twitter':
@@ -86,12 +99,16 @@ function findSocialFeedCache (req, res, source) {
 			res.end('error: invalid source id, must not contain special characters other than - or _');
 		}
 		
+		if (expiration != null && ((new Date(expiration)).getTime() > 0) == false) {
+			res.end('error: invalid expiration timestamp, must be equivalent to javascript Date.getTime().');
+		}
+		
 		mongoClient.connect(mongoConnStr, function (err, db){
 			if (err instanceof Error) {
 				logError(err);
 				res.end();
 			}else{
-				db.collection('feeds').findOne({key:key, source:source}, function (err, record) {
+				db.collection('feeds').findOne({key:key, source:source, sourceId: sourceId}, function (err, record) {
 					var ret = {};
 					if (err instanceof Error) {
 						logError(err);
@@ -100,7 +117,7 @@ function findSocialFeedCache (req, res, source) {
 						if (record == null) {
 							getSocialFeed(source, sourceId, function (data) {
 								if (data != null && typeof data.error == "undefined") {
-									db.collection('feeds').insert({key:key, source:source, feed:data, lastmod: timestamp}, function (err, records) {
+									db.collection('feeds').insert({key:key, source:source, sourceId:sourceId, feed:data, lastmod: timestamp}, function (err, records) {
 										if (err instanceof Error) {
 											logError(err);
 										}
@@ -112,10 +129,11 @@ function findSocialFeedCache (req, res, source) {
 								}
 							});
 						}else{
-							if ((timestamp - record.lastmod) > (60000 * expiration)) {
+							var doc_expiration = expiration || timestamp;
+							if ((record.expiration < doc_expiration) || (expiration && expiration < timestamp)) {
 								getSocialFeed(source, sourceId, function (data) {
 									if (data != null && typeof data.error == "undefined") {
-										db.collection('feeds').update({key:key, source:source}, {'$set':{feed:data, lastmod: timestamp}}, function (err, records) {
+										db.collection('feeds').update({key:key, source:source}, {'$set':{feed:data, lastmod: timestamp, expiration: expiration || default_expiration}}, function (err, records) {
 											if (err instanceof Error) {
 												logError(err);
 											}
