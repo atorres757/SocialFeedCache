@@ -1,21 +1,32 @@
 SocialFeedCache
 ===============
 
-An api used to retrieve social media feeds from facebook, twitter and youtube. It will use mongo db to cache the feed data.
+An api used to retrieve public social media feeds from facebook, twitter and youtube. It uses MongoDB to cache the feed data and log errors.
 
-Example:
+Example of how to request a public YouTube feed and place an expiration on the cache:
+```
+http://localhost:3000/youtube?key=cachekey&sourceId=MyYoutubeHandle[&expiration=1368561578450]
+```
 
-http://localhost:3000/youtube?key=cachekey&sourceId=MyYoutubeId
+A default expiration of 10 minutes is set if an expiration isn't provided. If you want to reset the cache, pass a js timestamp in the past.
 
-Uses the following npm modules
+The purpose of the cache key is to have a one to many relationship with various feeds. For example one entity can have multiple social feeds. The cachekey can be used as the id for the entity.
 
-mongodb
+This project uses the following npm modules. 
+* mongodb
+* express
+* fbgraph
+* twitter-api
+* youtube-feeds
 
-express
+## ErrorLog ##
 
-fbgraph
+If you want to see a list of errors go to:
+```
+http://localhost:3000/errors.
+```
 
-twitter-api
+## Nice to Have ##
 
-youtube-feeds
+I'll be looking into adding some additional endpoints to return all feed data by cachekey. I'll also be looking into making the errors endpoint queryable.
 
